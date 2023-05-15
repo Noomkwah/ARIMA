@@ -1,0 +1,283 @@
+---
+title: "Linear time series project"
+author: "Jeanne Gauthier and Keryann Massin"
+date: "2023-05-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+require(dplyr)
+```
+
+# ARIMA modelling of time series
+
+## Part I : the data
+
+### Question 1
+
+Import data
+
+The file "valeurs_mensuelles.csv" corresponds to the data here: <https://www.insee.fr/fr/statistiques/serie/010537206>.
+
+```{r}
+data <- read.csv("C:/Users/kerya/Documents/Github/ARIMA/valeurs_mensuelles.csv", sep=";")
+```
+
+We will be using the "zoo" package which formalizes time series, and the "tseries" package for various time series analysis functions.
+
+```{r}
+require(zoo)
+require(tseries)
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+data <- tail(data, -3)
+colnames(data) <- c("date", "value", "code")
+head(data)
+```
+
+```{r}
+data <- data[, !(names(data) %in% c("code"))]
+dates <- as.yearmon(seq(from=1990,to=2023+2/12,by=1/12))
+value <- zoo(data$value,order.by=rev(dates))
+value
+plot(value,ylim=c(0,600),main="raw IPI series")
+```
+
+#### Answer 1 :
+
+The chosen series represents the industrial production index corrected from seasonal variations and working days, on a monthly frequency. The IPI makes it possible to follow the monthly evolution of industrial activity in France and in construction.
+
+### Question 2 :
+
+#### Stationarisation
+
+First, we transform the series with a box_cox transformation of parameter lambda=0, or equivalently we take the logarithm of the series.
+
+```{r}
+log_value <- zoo(log(as.numeric(data$value)),order.by=rev(dates))
+  plot(log_value,ylim=c(3.5,6.5),main="log(IPI)")
+```
+
+The series log(X_t) isn't stationary, she has a trend so in order to make it stationary, we are going to use the first difference operator.
+
+```{r}
+dvalue <- diff(log_value,1) #first difference
+dvalue
+plot(dvalue,ylim=c(-0.4,0.4),main="First difference of log(IPI)")
+```
+
+So the series (log(X_t/X_{t-1})) seems stationary but we have to verify this assumption through several stationarity tests.
+So we are going to perform the unit root tests but before we need to check if there is an intercept and / or a non null linear trend.
+
+Let’s regress log(values) and dvalue on its dates to check :
+```{r}
+summary(lm(log_value ~ dates))
+```
+```{r}
+summary(lm(dvalue ~ dates[-1]))
+```
+```{r}
+require(fUnitRoots) 
+adf <- adfTest(log_value)
+adf
+```
+The p-value = 0.06 > 0.05 so we don't reject this test for 5% threshold. So the log(value) series isn't stationary.
+
+Let's try the ADF test for the diff_log(value) series
+
+```{r}
+adf <- adfTest(dvalue)
+adf
+```
+The p-value = 0.01 < 0.05 so the test is rejected for 5% threshold. So the diff_log(value) series is stationary.
+
+```{r}
+kpss.test(log_value, null="Level")
+kpss.test(dvalue, null="Level")
+```
+KPSS test successfully rejects stationarity at level 1% but can not reject it for dvalue.
+
+#### Answer 2 : 
+
+To make the series stationary, we transformed it using a box_cox transformation of parameter λ =0, before using the first difference operator.
+On the resulting series, the mean and variance tends to stay constant across time, and the Augmented Dickey-Fuller Test validated this hypothesis at the 1% threshold.
+
+
+### Question 3 :
+
+#### Answer 3 :
+see graphics below.
+
+```{r}
+plot(value,ylim=c(0,600),main="IPI across time")
+```
+
+```{r}
+plot(dvalue,ylim=c(-0.4,0.4),main="First difference of log(IPI)")
+```
+
+## Part II : ARMA models
+
+### Question 4
+
+```{r}
+acf(dvalue,15)
+pacf(dvalue,15)
+```
+
+We see that empiricals autocorrelations and partial autocorrelations decrease rapidly. Hence, an ARMA(p,q) model can be fitted on the series.
+Pacf is statistically different from 0 for lags 1, 2, 3. We will then try p =0,1,2,3.
+Acf is statistically different from 0 for lags 1, 2. We will then try p = 0,1,2.
+
+```{r}
+arima302 <- arima(dvalue,c(3,0,2)) #saves the estimation results
+```
+
+The model is valid if the residuals aren’t autocorrelated. We can test that by using the Ljung-Box test of the
+null hypothesis of joint nullity of autocorrelations until a given order k (hence the absence of autocorrelation)
+
+```{r}
+arima302
+Box.test(arima302$residuals, lag=6, type="Ljung-Box", fitdf=5) #Ljung-Box test
+```
+The null hypothesis is not rejected at the 95% level (p-value>0.05), we can therefore say that the residuals are
+not autocorrelated until 6 lags.
+
+The null hypothesis is not rejected at the 95% level (p-value>0.05), we can therefore say that the residuals are not autocorrelated until 6 lags. To ensure the absence of autocorrelation, we will test for 24 lags in this case.
+```{r}
+Qtests <- function(series, k, fitdf=0) {
+pvals <- apply(matrix(1:k), 1, FUN=function(l) {
+pval <- if (l<=fitdf) NA else Box.test(series, lag=l, type="Ljung-Box", fitdf=fitdf)$p.value
+return(c("lag"=l,"pval"=pval))
+})
+return(t(pvals))
+}
+Qtests(arima302$residuals, 24, 5)
+```
+
+p = 3, q = 2 :
+We have already shown that the residuals of the ARIMA(3,0,2) are not correlated, this model is thus valid.
+
+As for the statisical significance of coefficients, we can check that we do have indeed a ratio between the estimated coefficient and the estimated variance that is well above 1.96 in absolute value (or if the corresponding p-value is lower than 0.05).
+
+```{r}
+#test function of individual statistical significance of the coefficients
+signif <- function(estim){coef <- estim$coef
+se <- sqrt(diag(estim$var.coef))
+t <- coef/se
+pval <- (1-pnorm(abs(t)))*2
+return(rbind(coef,se,pval))}
+
+signif(arima302)
+```
+The coefficients of the highest lags AR(3) and MA(2) don’t each reject the null hypothesis at the 95% level (p-value>0.05), therefore the ARIMA(3,0,2) is not properly adjusted.
+
+We want to try a similar procedure on the sub-models ARIMA candidates.
+
+```{r}
+##function to print the tests for the ARIMA model selection
+arimafit <- function(estim){
+adjust <- round(signif(estim),3)
+pvals <- Qtests(estim$residuals,24,length(estim$coef)-1)
+pvals <- matrix(apply(matrix(1:24,nrow=6),2,function(c) round(pvals[c,],3)),nrow=6)
+colnames(pvals) <- rep(c("lag", "pval"),4)
+cat("coefficients nullity tests :\n")
+print(adjust)
+cat("\n tests of autocorrelation of the residuals : \n")
+print(pvals)
+}
+```
+
+* p=1 and q=0
+```{r}
+estim <- arima(dvalue,c(1,0,0)); arimafit(estim)
+```
+The model is well-adjusted (the AR(1) coefficient is significant) but is not valid (the residuals are autocorrelated because Q(2) to Q(24) reject the absence of autocorrelation).
+
+* p=2 and q=0
+```{r}
+estim <- arima(dvalue,c(2,0,0)); arimafit(estim)
+```
+
+The model is well-adjusted (the coefficients are significant) but is not valid (the residuals are autocorrelated because Q(3) to Q(20) reject the absence of autocorrelation).
+
+
+* p=3 and q=0
+```{r}
+estim <- arima(dvalue,c(3,0,0)); arimafit(estim)
+```
+The model is well-adjusted (the coefficients are significant) but is not valid (the residuals are autocorrelated because some Q reject the absence of autocorrelation).
+
+
+* p=0 and q=1
+```{r}
+estim <- arima(dvalue,c(0,0,1)); arimafit(estim)
+```
+The model is well-adjusted (the coefficient is significant) but is not valid (the residuals are autocorrelated because some Q reject the absence of autocorrelation).
+
+* p=1 and q=1
+```{r}
+estim <- arima(dvalue,c(1,0,1)); arimafit(estim)
+```
+The model is well-adjusted (the coefficients are significant) but is not valid (the residuals are autocorrelated because some Q reject the absence of autocorrelation).
+
+* p=2 and q=1
+```{r}
+estim <- arima(dvalue,c(2,0,1)); arimafit(estim)
+ar2ma1 <- estim
+```
+The model is well-adjusted (the coefficients are significant) and is valid (the residuals aren't autocorrelated because no Q reject the absence of autocorrelation).
+
+* p=3 and q=1
+```{r}
+estim <- arima(dvalue,c(3,0,1)); arimafit(estim)
+```
+The model isn't well-adjusted (the coefficient of AR[3] isn't significant because the p-value >0.05).
+
+* p=0 and q=2
+```{r}
+estim <- arima(dvalue,c(0,0,2)); arimafit(estim)
+ma2 <- estim
+```
+The model is well-adjusted (the coefficient is significant) and is valid (the residuals aren't autocorrelated because no Q reject the absence of autocorrelation).
+
+* p=1 and q=2
+```{r}
+estim <- arima(dvalue,c(1,0,2)); arimafit(estim)
+ar1ma2 <- estim
+```
+The model is well-adjusted (the coefficients are significant) and is valid (the residuals aren't autocorrelated because no Q reject the absence of autocorrelation).
+
+* p=2 and q=2
+```{r}
+estim <- arima(dvalue,c(2,0,2)); arimafit(estim)
+```
+
+The model isn't well-adjusted (all the coefficients aren't significant).
+
+So after this step, we keep the ARMA(2,1), MA(2) and ARMA(1,2). In order to determine the best model we are going to check the AIC and BIC.
+
+```{r}
+models <- c("ar2ma1","ma2","ar1ma2"); names(models) <- models
+apply(as.matrix(models),1, function(m) c("AIC"=AIC(get(m)), "BIC"=BIC(get(m))))
+```
+The model ARMA(1,2) minimize the AIC and the model MA(2) minimize the BIC but the BIC of the ARMA(1,2) is really close to the BIC of the MA(2) so we consider that the ARMA(1,2) is the best model to fit with diff_log(value).
+
+### Question 5:
+
+```{r}
+estim <- arima(log_value,c(1,1,2)); arimafit(estim)
+```
+#### Answer 5:
+
+The model is well-adjusted (the coefficients are significant) and is valid (the residuals aren't autocorrelated because no Q reject the absence of autocorrelation).So our series log(value) fits with an ARIMA(1,1,2).
