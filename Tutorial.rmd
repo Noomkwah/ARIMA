@@ -25,8 +25,9 @@ Import data
 The file "valeurs_mensuelles.csv" corresponds to the data here: <https://www.insee.fr/fr/statistiques/serie/010537206>.
 
 ```{r}
-data <- read.csv("C:/Users/kerya/Documents/Github/ARIMA/valeurs_mensuelles.csv", sep=";")
+data <- read.csv("C:/Users/kerya/Documents/Github/ARIMA/Data/valeurs_mensuelles.csv", sep=";")
 ```
+
 
 We will be using the "zoo" package which formalizes time series, and the "tseries" package for various time series analysis functions.
 
@@ -281,3 +282,35 @@ estim <- arima(log_value,c(1,1,2)); arimafit(estim)
 #### Answer 5:
 
 The model is well-adjusted (the coefficients are significant) and is valid (the residuals aren't autocorrelated because no Q reject the absence of autocorrelation).So our series log(value) fits with an ARIMA(1,1,2).
+
+### Question 8:
+
+
+```{r}
+library(forecast)
+```
+
+
+```{r}
+arima112 = arima(log_value, c(1, 1, 2))
+arima112
+signif(arima112)
+arimafit(arima112)
+
+# QQ Plot
+residuals = arima112$residuals
+qqnorm(residuals)
+
+# Whiteness of the residuals
+Box.test(residuals, type = "Ljung-Box")
+
+# Overview of the forecast
+forecast <- forecast(arima112, h=2)
+plot(forecast, xlim = c(1990, 2023+4/12))
+```
+```{r}
+# Closer view
+plot(forecast, xlim = c(2020, 2023+4/12))
+```
+
+

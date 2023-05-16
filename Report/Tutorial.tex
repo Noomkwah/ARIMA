@@ -10,6 +10,7 @@
 \usepackage{graphicx}
 \usepackage{url}
 \usepackage{float}
+\graphicspath{{figures/}}
 
 % UTILISER LA LIGNE CI-DESSOUS POUR CHANGER LES MARGES
 \newgeometry{vmargin={20mm}, hmargin={30mm,30mm}}   % set the margins
@@ -282,6 +283,21 @@ To get the previous results, we made some hypothesis:
 \subsection{Question 8}
 \textit{Graphically represent this region for $\alpha = 95\%$. Comment on it.}\\
 
+Using the ARIMA(1, 1, 2) model we trained in the previous parts of the project, we were able to forecast the values of $X_{T+1}$ and $X_{T+2}$ and plot their confidence region of level $\alpha = 0.95$. Figure \ref{forecastSeries} presents in blue the forecast values of $X_{T+1}$ and $X_{T+2}$ and their confidence region in grey, through both an overview and a closer view.
+\begin{figure}[!h]
+	\centering
+	\begin{minipage}{0.45 \linewidth}
+		\centering
+		\includegraphics[scale=0.4]{forecast.png}
+	\end{minipage}
+	\hfill
+	\begin{minipage}{0.48 \linewidth}
+		\centering
+		\includegraphics[scale=0.4]{forecast_zoomed.png}
+	\end{minipage}
+	\caption{Forecast values of $X_{T+1}$ and $X_{T+2}$ and their confidence region of level $\alpha=95\%$}
+	\label{forecastSeries}
+\end{figure}\\
 
 
 \subsection{Question 9 -  Open question}
